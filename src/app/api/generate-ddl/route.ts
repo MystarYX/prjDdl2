@@ -934,11 +934,11 @@ function generateDDL(fields: FieldInfo[], customRules: Record<string, InferenceR
   const adjustedFields = fields.map(field => {
     const fieldName = field.alias || field.name;
     
-    // StarRocks: 忽略原始类型，统一使用推断的类型（调整2）
-    // Spark/MySQL: 保留原逻辑（有原始类型则使用原始类型）
+    // StarRocks/MySQL: 忽略原始类型，统一使用推断的类型
+    // Spark: 保留原逻辑（有原始类型则使用原始类型）
     let fieldType: string;
-    if (databaseType === 'starrocks') {
-      // StarRocks 统一使用推断的类型
+    if (databaseType === 'starrocks' || databaseType === 'mysql') {
+      // StarRocks/MySQL 统一使用推断的类型
       const typeInfo = inferFieldType(fieldName, field.comment, dbRules, databaseType);
       fieldType = mapDataType(typeInfo, databaseType);
     } else if (field.originalType && field.originalType.trim()) {
