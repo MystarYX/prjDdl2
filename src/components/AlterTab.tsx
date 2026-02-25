@@ -74,6 +74,8 @@ const parseFields = (text: string): Array<{ name: string; comment: string }> => 
 
     if (lineCommentMatch) {
       comment = lineCommentMatch[1].trim();
+      // 去掉注释外层的引号（如 --'委托方' → 委托方）
+      comment = comment.replace(/^['"]+|['"]+$/g, '');
     } else if (commentKeywordMatch) {
       comment = commentKeywordMatch[1].trim();
     }
