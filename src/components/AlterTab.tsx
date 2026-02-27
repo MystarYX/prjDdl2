@@ -146,8 +146,10 @@ const inferFieldType = (
       const baseType = rule.dataTypes[databaseType] || rule.dataTypes['spark'];
       if (!baseType) continue;
 
-      // 获取类型参数
-      const params = rule.typeParams[databaseType] || {};
+      // 获取类型参数（支持两种格式）
+      // 格式1: { spark: { precision: 24, scale: 6 } }
+      // 格式2: { precision: 24, scale: 6 } （直接配置，不区分数据库）
+      const params = rule.typeParams[databaseType] || rule.typeParams || {};
       const upper = baseType.toUpperCase();
 
       // 根据参数构建完整类型字符串
@@ -162,9 +164,9 @@ const inferFieldType = (
         return `${baseType}(${params.precision})`;
       }
       
-      // DECIMAL/NUMERIC 类型如果没有配置参数，使用默认值 (18, 2)
+      // DECIMAL/NUMERIC 类型如果没有配置参数，使用默认值 (24, 6)
       if (upper.includes('DECIMAL') || upper.includes('NUMERIC')) {
-        return `${baseType}(18, 2)`;
+        return `${baseType}(24, 6)`;
       }
       
       // VARCHAR/CHAR 类型如果没有配置参数，使用默认长度
