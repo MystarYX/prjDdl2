@@ -879,6 +879,11 @@ function generateStarRocksDDL(adjustedFields: Array<{name: string, type: string,
   // 字段定义
   ddlParts.push(...generateFieldDefinitions(adjustedFields));
 
+  // StarRocks 固定追加两个字段
+  const maxName = Math.max(...adjustedFields.map(f => f.name.length), 30);
+  ddlParts.push(`   ,${'etl_time'.padEnd(maxName)} DATETIME            DEFAULT CURRENT_TIMESTAMP COMMENT 'etl时间'`);
+  ddlParts.push(`   ,${'db_time'.padEnd(maxName)} DATETIME            DEFAULT CURRENT_TIMESTAMP COMMENT 'db修改时间'`);
+
   ddlParts.push(')');
 
   // ENGINE
