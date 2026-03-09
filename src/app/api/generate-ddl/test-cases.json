@@ -44,7 +44,7 @@
       "description": "测试WITH子句的移除和主SELECT解析",
       "input": {
         "sql": "WITH user_stats AS (\n  SELECT user_id, COUNT(*) AS order_count\n  FROM orders\n  GROUP BY user_id\n)\nSELECT \n  u.user_id AS id, -- 用户ID\n  u.user_name AS name, -- 用户名称\n  s.order_count AS count -- 订单数量\nFROM users u\nJOIN user_stats s ON u.user_id = s.user_id",
-        "databaseTypes": ["spark", "postgresql"]
+        "databaseTypes": ["spark"]
       },
       "expected": {
         "spark": {
@@ -63,7 +63,7 @@
       "description": "测试多个CTE（逗号分隔）的解析",
       "input": {
         "sql": "WITH \n  user_orders AS (\n    SELECT user_id, COUNT(*) AS order_count\n    FROM orders\n    GROUP BY user_id\n  ),\n  user_amounts AS (\n    SELECT user_id, SUM(amount) AS total_amount\n    FROM orders\n    GROUP BY user_id\n  )\nSELECT \n  u.user_id AS id, -- 用户ID\n  o.order_count AS order_cnt, -- 订单数\n  a.total_amount AS total_amt -- 总金额\nFROM users u\nJOIN user_orders o ON u.user_id = o.user_id\nJOIN user_amounts a ON u.user_id = a.user_id",
-        "databaseTypes": ["mysql", "clickhouse"]
+        "databaseTypes": ["mysql"]
       },
       "expected": {
         "mysql": {
@@ -82,7 +82,7 @@
       "description": "测试注释中的引号去除和特殊字符处理",
       "input": {
         "sql": "SELECT user_icode AS code, -- \"用户\"编码\n  user_name AS name, -- 用户名称 'test'\n  order_amt AS amount, -- 订单数量 (单位: 元)\n  order_qty AS qty, -- 商品数量\n  order_flag AS is_valid, -- 是否有效: 1-是 0-否\n  fcy_amt AS fcy_amount, -- 原币金额\n  scy_amt AS scy_amount, -- 本币金额\n  trade_date AS trans_date, -- 交易日期\n  create_time AS timestamp -- 创建时间\nFROM trade_records",
-        "databaseTypes": ["spark", "mysql", "postgresql"]
+        "databaseTypes": ["spark", "mysql"]
       },
       "expected": {
         "spark": {

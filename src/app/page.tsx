@@ -241,11 +241,11 @@ export default function Home() {
   }, []);
 
   // 保存规则到 localStorage
-  const saveRules = () => {
+  const saveRules = (rulesToSave: GlobalRule[] = globalRules) => {
     try {
-      console.log('💾 保存规则到 localStorage，数量:', globalRules.length);
-      console.log('保存的规则详情:', JSON.stringify(globalRules, null, 2));
-      localStorage.setItem('ddl_generator_global_rules', JSON.stringify(globalRules));
+      console.log('💾 保存规则到 localStorage，数量:', rulesToSave.length);
+      console.log('保存的规则详情:', JSON.stringify(rulesToSave, null, 2));
+      localStorage.setItem('ddl_generator_global_rules', JSON.stringify(rulesToSave));
       console.log('✅ localStorage 当前内容:', localStorage.getItem('ddl_generator_global_rules'));
       setDirtyRules(new Set()); // 清除所有脏标记
     } catch (e) {
@@ -349,8 +349,9 @@ export default function Home() {
 
 
   const handleResetRules = () => {
-    setGlobalRules(JSON.parse(JSON.stringify(DEFAULT_GLOBAL_RULES)));
-    saveRules();
+    const nextRules = JSON.parse(JSON.stringify(DEFAULT_GLOBAL_RULES)) as GlobalRule[];
+    setGlobalRules(nextRules);
+    saveRules(nextRules);
     success('规则已重置为默认值');
   };
 
