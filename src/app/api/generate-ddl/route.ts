@@ -154,7 +154,8 @@ function tryParseCreateTable(sql: string): FieldInfo[] {
     // 解析字段定义：字段名 类型 [COMMENT '注释']
     // 支持单引号和双引号的注释
     // 类型可能包含括号和逗号，如 DECIMAL(10, 2)
-    const commentMatch = trimmedLine.match(/\s+COMMENT\s+['"]([^'"]*)['"]$/i);
+    // 支持 COMMENT'xxx' 和 COMMENT 'xxx' 两种格式
+    const commentMatch = trimmedLine.match(/\s+COMMENT\s*['"]([^'"]*)['"]$/i);
     const comment = commentMatch ? commentMatch[1] : '';
 
     // 去掉注释部分
