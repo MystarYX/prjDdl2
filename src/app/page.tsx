@@ -184,11 +184,21 @@ export default function Home() {
   const [selectedDbTypes, setSelectedDbTypes] = useState<string[]>(['spark']);
   const [globalRules, setGlobalRules] = useState<GlobalRule[]>(DEFAULT_GLOBAL_RULES);
   const [savedRules, setSavedRules] = useState<GlobalRule[]>(DEFAULT_GLOBAL_RULES);
-  const [rulesVersion, setRulesVersion] = useState<string | null>(null);
+  const globalRulesRef = useRef<GlobalRule[]>(DEFAULT_GLOBAL_RULES);
+  const rulesVersionRef = useRef<string | null>(null);
   const [codeToNameConfig, setCodeToNameConfig] = useState<ConfigRow[]>([]);
   const [dirtyRules, setDirtyRules] = useState<Set<string>>(new Set()); // 记录已修改但未保存的规则ID
   const handleCodeToNameChange = useCallback((rows: ConfigRow[]) => {
     setCodeToNameConfig(rows);
+  }, []);
+
+  const setGlobalRulesWithRef = useCallback((nextRules: GlobalRule[]) => {
+    globalRulesRef.current = nextRules;
+    setGlobalRules(nextRules);
+  }, []);
+
+  const setRulesVersionWithRef = useCallback((nextVersion: string | null) => {
+    rulesVersionRef.current = nextVersion;
   }, []);
 
   useEffect(() => {
@@ -196,9 +206,9 @@ export default function Home() {
       try {
         const remote = await fetchRulesConfigFromApi();
         const normalizedRules = migrateLegacyRuleFormat(remote.data || DEFAULT_GLOBAL_RULES);
-        setGlobalRules(normalizedRules);
+        setGlobalRulesWithRef(normalizedRules);
         setSavedRules(normalizedRules);
-        setRulesVersion(remote.version ?? null);
+        setRulesVersionWithRef(remote.version ?? null);
 
         if (!remote.version) {
           const legacyRaw = localStorage.getItem(LEGACY_RULES_KEY);
@@ -209,9 +219,10 @@ export default function Home() {
               const shouldMigrate = window.confirm('检测到浏览器中的历史规则，是否迁移到服务器配置？');
               if (shouldMigrate) {
                 const migrated = await saveRulesConfigToApi(migratedRules, null);
-                setGlobalRules(migrated.data);
-                setSavedRules(migrated.data);
-                setRulesVersion(migrated.version ?? null);
+                const migratedRulesData = Array.isArray(migrated.data) ? migrated.data : migratedRules;
+                setGlobalRulesWithRef(migratedRulesData);
+                setSavedRules(migratedRulesData);
+                setRulesVersionWithRef(migrated.version ?? null);
                 localStorage.removeItem(LEGACY_RULES_KEY);
                 toastHandlersRef.current.success('历史规则已迁移到服务器');
               }
@@ -223,25 +234,26 @@ export default function Home() {
       } catch (e) {
         console.error('❌ 规则加载失败:', e);
         toastHandlersRef.current.error(e instanceof Error ? e.message : '规则加载失败');
-        setGlobalRules(DEFAULT_GLOBAL_RULES);
+        setGlobalRulesWithRef(DEFAULT_GLOBAL_RULES);
         setSavedRules(DEFAULT_GLOBAL_RULES);
-        setRulesVersion(null);
+        setRulesVersionWithRef(null);
       }
     };
 
     void loadRules();
-  }, []);
+  }, [setGlobalRulesWithRef, setRulesVersionWithRef]);
 
   const saveRules = async (
-    rulesToSave: GlobalRule[] = globalRules,
+    rulesToSave?: GlobalRule[],
     options?: { savedRuleIds?: string[]; silent?: boolean },
   ) => {
+    const targetRules = rulesToSave ?? globalRulesRef.current;
     try {
-      const saved = await saveRulesConfigToApi(rulesToSave, rulesVersion);
-      const nextRules = Array.isArray(saved.data) ? saved.data : rulesToSave;
-      setGlobalRules(nextRules);
+      const saved = await saveRulesConfigToApi(targetRules, rulesVersionRef.current);
+      const nextRules = Array.isArray(saved.data) ? saved.data : targetRules;
+      setGlobalRulesWithRef(nextRules);
       setSavedRules(nextRules);
-      setRulesVersion(saved.version ?? null);
+      setRulesVersionWithRef(saved.version ?? null);
 
       if (options?.savedRuleIds?.length) {
         setDirtyRules(prev => new Set([...prev].filter(id => !options.savedRuleIds?.includes(id))));
@@ -260,9 +272,9 @@ export default function Home() {
         try {
           const latest = await fetchRulesConfigFromApi();
           const latestRules = migrateLegacyRuleFormat(latest.data || DEFAULT_GLOBAL_RULES);
-          setGlobalRules(latestRules);
+          setGlobalRulesWithRef(latestRules);
           setSavedRules(latestRules);
-          setRulesVersion(latest.version ?? null);
+          setRulesVersionWithRef(latest.version ?? null);
           setDirtyRules(new Set());
         } catch {
           // 忽略二次加载失败
@@ -374,7 +386,7 @@ export default function Home() {
 
   const handleResetRules = async () => {
     const nextRules = JSON.parse(JSON.stringify(DEFAULT_GLOBAL_RULES)) as GlobalRule[];
-    setGlobalRules(nextRules);
+    setGlobalRulesWithRef(nextRules);
     const ok = await saveRules(nextRules, { silent: true });
     if (ok) {
       success('规则已重置为默认值并保存到服务器');
@@ -383,7 +395,7 @@ export default function Home() {
 
   const handleClearLocalStorage = async () => {
     const nextRules = JSON.parse(JSON.stringify(DEFAULT_GLOBAL_RULES)) as GlobalRule[];
-    setGlobalRules(nextRules);
+    setGlobalRulesWithRef(nextRules);
     const ok = await saveRules(nextRules, { silent: true });
     if (ok) {
       success('已清空服务器规则并恢复默认值');
@@ -403,13 +415,15 @@ export default function Home() {
       typeParams: {},
       priority: 999
     };
-    setGlobalRules([...globalRules, newRule]);
-    setDirtyRules(new Set([...dirtyRules, newRule.id])); // 标记新规则为脏
+    const nextRules = [...globalRules, newRule];
+    setGlobalRulesWithRef(nextRules);
+    setDirtyRules(prev => new Set([...prev, newRule.id])); // 标记新规则为脏
   };
 
   const deleteRule = (id: string) => {
-    setGlobalRules(globalRules.filter(r => r.id !== id));
-    setDirtyRules(new Set([...dirtyRules].filter(r => r !== id))); // 移除脏标记
+    const nextRules = globalRules.filter(r => r.id !== id);
+    setGlobalRulesWithRef(nextRules);
+    setDirtyRules(prev => new Set([...prev].filter(r => r !== id))); // 移除脏标记
   };
 
   const updateRule = (id: string, updates: Partial<GlobalRule>) => {
@@ -418,14 +432,15 @@ export default function Home() {
       rule.id === id ? { ...rule, ...updates } : rule
     );
     console.log('✅ 更新后的规则:', updatedRules.find(r => r.id === id));
-    setGlobalRules(updatedRules);
-    setDirtyRules(new Set([...dirtyRules, id])); // 标记规则为脏
+    setGlobalRulesWithRef(updatedRules);
+    setDirtyRules(prev => new Set([...prev, id])); // 标记规则为脏
   };
 
   // 手动保存单个规则（添加验证）
   const saveSingleRule = async (id: string) => {
     // 验证规则数据
-    const ruleToSave = globalRules.find(r => r.id === id);
+    const latestRules = globalRulesRef.current;
+    const ruleToSave = latestRules.find(r => r.id === id);
     if (!ruleToSave) {
       toastError('规则不存在');
       return;
@@ -451,14 +466,14 @@ export default function Home() {
       }
     }
 
-    const ok = await saveRules(globalRules, { savedRuleIds: [id], silent: true });
+    const ok = await saveRules(latestRules, { savedRuleIds: [id], silent: true });
     if (ok) {
       success('规则已保存');
     }
   };
 
   const toggleAllDatabases = (ruleId: string, selectAll: boolean) => {
-    setGlobalRules(globalRules.map(rule => {
+    const nextRules = globalRules.map(rule => {
       if (rule.id !== ruleId) return rule;
 
       const allDatabases = Object.keys(DB_LABELS);
@@ -490,12 +505,14 @@ export default function Home() {
         ...rule,
         targetDatabases: newTargetDatabases
       };
-    }));
-    // 不再自动保存，等待用户手动点击保存按钮
+    });
+
+    setGlobalRulesWithRef(nextRules);
+    setDirtyRules(prev => new Set([...prev, ruleId]));
   };
 
   const handleDatabaseChange = (ruleId: string, dbType: string, checked: boolean) => {
-    setGlobalRules(globalRules.map(rule => {
+    const nextRules = globalRules.map(rule => {
       if (rule.id !== ruleId) return rule;
 
       const newTargetDatabases = checked
@@ -538,12 +555,14 @@ export default function Home() {
         ...rule,
         targetDatabases: newTargetDatabases
       };
-    }));
-    // 不再自动保存，等待用户手动点击保存按钮
+    });
+
+    setGlobalRulesWithRef(nextRules);
+    setDirtyRules(prev => new Set([...prev, ruleId]));
   };
 
   const updateTypeParam = (ruleId: string, dbType: string, paramUpdates: any) => {
-    setGlobalRules(globalRules.map(rule => {
+    const nextRules = globalRules.map(rule => {
       if (rule.id !== ruleId) return rule;
 
       const newTypeParams = { ...rule.typeParams };
@@ -572,10 +591,11 @@ export default function Home() {
       }
 
       newTypeParams[dbType] = currentParams;
-
       return { ...rule, typeParams: newTypeParams };
-    }));
-    // 不再自动保存，等待用户手动点击保存按钮
+    });
+
+    setGlobalRulesWithRef(nextRules);
+    setDirtyRules(prev => new Set([...prev, ruleId]));
   };
 
   const hasTypeParams = (dataType: string) => {
