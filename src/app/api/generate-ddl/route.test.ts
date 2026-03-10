@@ -12,6 +12,32 @@ function makeRequest(body: unknown): NextRequest {
 }
 
 describe('/api/generate-ddl', () => {
+  it('returns 400 for empty sql input', async () => {
+    const response = await POST(
+      makeRequest({
+        sql: '   ',
+        databaseTypes: ['spark'],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain('请提供有效的SQL查询语句');
+  });
+
+  it('returns 400 for unparseable sql input', async () => {
+    const response = await POST(
+      makeRequest({
+        sql: 'SELECT',
+        databaseTypes: ['spark'],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain('未能从SQL中解析出字段');
+  });
+
   it('returns 400 for unsupported databaseTypes instead of silent success', async () => {
     const response = await POST(
       makeRequest({

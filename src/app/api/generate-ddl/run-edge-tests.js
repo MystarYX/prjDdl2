@@ -197,10 +197,10 @@ async function runEdgeCaseTests() {
   }
   console.log(`\n${colors.blue}========================================${colors.reset}\n`);
 
-  process.exit(failed > 0 ? 1 : 0);
+  process.exitCode = failed > 0 ? 1 : 0;
 }
 
 runEdgeCaseTests().catch(error => {
   console.error(`${colors.red}❌ 测试执行失败: ${error.message}${colors.reset}`);
-  process.exit(1);
+  process.exitCode = 1;
 });

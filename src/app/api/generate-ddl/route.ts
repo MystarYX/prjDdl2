@@ -35,6 +35,30 @@ function isDatabaseType(value: string): value is DatabaseType {
   return value in DATABASE_CONFIGS;
 }
 
+class ClientInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ClientInputError';
+  }
+}
+
+function asClientInputError(error: unknown): ClientInputError | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  if (error instanceof ClientInputError) {
+    return error;
+  }
+
+  // Parser-level bad SQL should be treated as client input errors (400).
+  if (error.message === '无法从SQL中解析出字段' || error.message === '未能从SQL中解析出字段') {
+    return new ClientInputError(error.message);
+  }
+
+  return null;
+}
+
 // 解析 CREATE TABLE 语句，提取字段信息
 function tryParseCreateTable(sql: string): FieldInfo[] {
   const upperSql = sql.toUpperCase();
@@ -310,7 +334,7 @@ function parseSQLFields(sql: string): FieldInfo[] {
   const result = tryParseFieldList(sql);
   if (result.length > 0) return result;
 
-  throw new Error('无法从SQL中解析出字段');
+  throw new ClientInputError('未能从SQL中解析出字段');
 }
 
 function tryParseSelectFrom(sql: string): FieldInfo[] {
@@ -1042,12 +1066,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { sql, rulesByDatabase, databaseTypes } = body;
+    const normalizedSql = typeof sql === 'string' ? sql.trim() : '';
 
-    if (!sql || typeof sql !== 'string') {
+    if (!normalizedSql) {
       return NextResponse.json({ error: '请提供有效的SQL查询语句' }, { status: 400 });
     }
 
-    const fields = parseSQLFields(sql.trim());
+    const fields = parseSQLFields(normalizedSql);
     if (fields.length === 0) {
       return NextResponse.json({ error: '未能从SQL中解析出字段' }, { status: 400 });
     }
@@ -1071,6 +1096,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
+    const inputError = asClientInputError(error);
+    if (inputError) {
+      return NextResponse.json({ error: inputError.message }, { status: 400 });
+    }
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : '生成失败' },
       { status: 500 }
