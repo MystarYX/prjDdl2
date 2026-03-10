@@ -879,10 +879,13 @@ function generateStarRocksDDL(adjustedFields: Array<{name: string, type: string,
   // 字段定义
   ddlParts.push(...generateFieldDefinitions(adjustedFields));
 
-  // StarRocks 固定追加两个字段
+  // StarRocks 固定追加五个字段
   const maxName = Math.max(...adjustedFields.map(f => f.name.length), 30);
-  ddlParts.push(`   ,${'etl_time'.padEnd(maxName)} DATETIME            DEFAULT CURRENT_TIMESTAMP COMMENT 'etl时间'`);
-  ddlParts.push(`   ,${'db_time'.padEnd(maxName)} DATETIME            DEFAULT CURRENT_TIMESTAMP COMMENT 'db修改时间'`);
+  ddlParts.push(`   ,\`etl_time\`${' '.repeat(Math.max(maxName - 8, 1))}datetime NULL DEFAULT CURRENT_TIMESTAMP COMMENT "etl时间"`);
+  ddlParts.push(`   ,\`update_time\`${' '.repeat(Math.max(maxName - 11, 1))}datetime NULL DEFAULT CURRENT_TIMESTAMP COMMENT "db修改时间"`);
+  ddlParts.push(`   ,\`sbmt_time\`${' '.repeat(Math.max(maxName - 9, 1))}datetime NULL      COMMENT "数据源事务提交时间"`);
+  ddlParts.push(`   ,\`dsg_opc\`${' '.repeat(Math.max(maxName - 7, 1))}datetime NULL      COMMENT "迪思杰系统标记"`);
+  ddlParts.push(`   ,\`db_time\`${' '.repeat(Math.max(maxName - 7, 1))}datetime NULL DEFAULT CURRENT_TIMESTAMP COMMENT "默认系统时间，数据实际入sr的时间"`);
 
   ddlParts.push(')');
 
