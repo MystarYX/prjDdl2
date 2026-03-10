@@ -31,6 +31,10 @@ const DATABASE_CONFIGS: Record<DatabaseType, {
   starrocks: { prefix: 'CREATE TABLE ', comment: 'INLINE', addPk: true },
 };
 
+function isDatabaseType(value: string): value is DatabaseType {
+  return value in DATABASE_CONFIGS;
+}
+
 // 解析 CREATE TABLE 语句，提取字段信息
 function tryParseCreateTable(sql: string): FieldInfo[] {
   const upperSql = sql.toUpperCase();
@@ -712,6 +716,56 @@ interface TypeInfo {
   length?: number;
 }
 
+function inferByDefaultKeywords(name: string, comment: string): TypeInfo | null {
+  const nameRules: Array<{ keywords: string[]; result: TypeInfo }> = [
+    {
+      keywords: ['amount', 'amt', 'price', 'qty', 'quantity', 'total', 'sum', 'balance', 'fee', 'cost'],
+      result: { type: 'DECIMAL', precision: 24, scale: 6 },
+    },
+    {
+      keywords: ['date', '_dt', 'trans_date', 'biz_date'],
+      result: { type: 'DATE' },
+    },
+    {
+      keywords: ['time', 'timestamp', 'datetime', '_ts'],
+      result: { type: 'TIMESTAMP' },
+    },
+    {
+      keywords: ['id', 'icode'],
+      result: { type: 'STRING' },
+    },
+  ];
+
+  const commentRules: Array<{ keywords: string[]; result: TypeInfo }> = [
+    {
+      keywords: ['金额', '金額', '价格', '数量', '本币', '外币', '费用'],
+      result: { type: 'DECIMAL', precision: 24, scale: 6 },
+    },
+    {
+      keywords: ['日期'],
+      result: { type: 'DATE' },
+    },
+    {
+      keywords: ['时间', '时刻'],
+      result: { type: 'TIMESTAMP' },
+    },
+  ];
+
+  for (const rule of nameRules) {
+    if (rule.keywords.some(keyword => name.includes(keyword))) {
+      return rule.result;
+    }
+  }
+
+  for (const rule of commentRules) {
+    if (rule.keywords.some(keyword => comment.includes(keyword))) {
+      return rule.result;
+    }
+  }
+
+  return null;
+}
+
 function inferFieldType(fieldName: string, fieldComment: string, customRules?: InferenceRule[], databaseType?: DatabaseType): TypeInfo {
   const name = fieldName.toLowerCase();
   const comment = fieldComment.toLowerCase();
@@ -749,6 +803,11 @@ function inferFieldType(fieldName: string, fieldComment: string, customRules?: I
   }
 
   // 如果没有匹配到规则，根据数据库类型返回固定的默认类型
+  const defaultInferred = inferByDefaultKeywords(name, comment);
+  if (defaultInferred) {
+    return defaultInferred;
+  }
+
   if (databaseType === 'spark') {
     return { type: 'STRING' };
   } else if (databaseType === 'mysql' || databaseType === 'starrocks') {
@@ -774,7 +833,7 @@ function mapDataType(typeInfo: TypeInfo | string, databaseType: DatabaseType): s
     return databaseType === 'spark' ? 'STRING' : 'VARCHAR(255)';
   }
   if (data_type.startsWith('DECIMAL')) {
-    return precision && scale ? `DECIMAL(${precision},${scale})` : 'DECIMAL(24,6)';
+    return precision && scale ? `DECIMAL(${precision}, ${scale})` : 'DECIMAL(24, 6)';
   }
   if (data_type === 'TIMESTAMP') {
     return databaseType === 'spark' ? 'TIMESTAMP' : 'DATETIME';
@@ -967,9 +1026,7 @@ function generateDDL(fields: FieldInfo[], customRules: Record<string, InferenceR
 }
 
 function generateMultipleDDLs(fields: FieldInfo[], customRules: Record<string, InferenceRule[]>, databaseTypes: DatabaseType[]) {
-  const ddls = databaseTypes
-    .filter(dbType => dbType in DATABASE_CONFIGS)
-    .map(dbType => ({
+  const ddls = databaseTypes.map(dbType => ({
       databaseType: dbType,
       label: dbType.charAt(0).toUpperCase() + dbType.slice(1),
       ddl: generateDDL(fields, customRules, dbType)
@@ -995,7 +1052,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未能从SQL中解析出字段' }, { status: 400 });
     }
 
-    const dbTypes: DatabaseType[] = databaseTypes || ['spark'];
+    const rawDbTypes = Array.isArray(databaseTypes) && databaseTypes.length > 0 ? databaseTypes : ['spark'];
+    const invalidDbTypes = rawDbTypes.filter(
+      (dbType): dbType is string => typeof dbType !== 'string' || !isDatabaseType(dbType),
+    );
+    if (invalidDbTypes.length > 0) {
+      const supported = Object.keys(DATABASE_CONFIGS).join(', ');
+      return NextResponse.json(
+        { error: `Unsupported databaseTypes: ${invalidDbTypes.join(', ')}. Supported values: ${supported}` },
+        { status: 400 },
+      );
+    }
+
+    const dbTypes: DatabaseType[] = rawDbTypes;
     const customRules: Record<string, InferenceRule[]> = rulesByDatabase || {};
 
     const result = generateMultipleDDLs(fields, customRules, dbTypes);

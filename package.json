@@ -3,15 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "bash ./scripts/build.sh",
-    "dev": "bash ./scripts/dev.sh",
+    "build": "next build",
+    "dev": "next dev --webpack --port 5000",
     "preinstall": "npx only-allow pnpm",
     "lint": "eslint",
-    "start": "bash ./scripts/start.sh",
+    "start": "next start --port 5000",
     "ts-check": "tsc -p tsconfig.json",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "audit": "pnpm audit --registry=https://registry.npmjs.org",
+    "audit:ci": "pnpm audit --registry=https://registry.npmjs.org --audit-level=high"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",
@@ -49,7 +51,8 @@
     "only-allow": "^1.2.2",
     "tailwindcss": "^4.1.18",
     "ts-jest": "^29.4.6",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "undici": "^7.16.0"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {

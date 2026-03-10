@@ -1,4 +1,11 @@
-import '@testing-library/jest-dom';
+import { TextDecoder, TextEncoder } from 'util';
+import { ReadableStream, WritableStream, TransformStream } from 'stream/web';
+
+if (!globalThis.TextDecoder) globalThis.TextDecoder = TextDecoder;
+if (!globalThis.TextEncoder) globalThis.TextEncoder = TextEncoder;
+if (!globalThis.ReadableStream) globalThis.ReadableStream = ReadableStream;
+if (!globalThis.WritableStream) globalThis.WritableStream = WritableStream;
+if (!globalThis.TransformStream) globalThis.TransformStream = TransformStream;
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -24,21 +31,35 @@ const localStorageMock = (() => {
   };
 })();
 
-Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock,
-});
+if (!globalThis.localStorage) {
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: localStorageMock,
+    writable: true,
+  });
+}
 
-// Mock matchMedia
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: jest.fn().mockImplementation(query => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: jest.fn(),
-    removeListener: jest.fn(),
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    dispatchEvent: jest.fn(),
-  })),
-});
+if (typeof window !== 'undefined') {
+  if (!window.localStorage) {
+    Object.defineProperty(window, 'localStorage', {
+      value: localStorageMock,
+      writable: true,
+    });
+  }
+
+  // Mock matchMedia
+  if (!window.matchMedia) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: jest.fn().mockImplementation(query => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      })),
+    });
+  }
+}
