@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "ExcelToDdl", "E:", "tmp", "jest.config.js", "jest.setup.js", ".next"]
+  "exclude": ["node_modules", "ExcelToDdl", "tmp", "jest.config.js", "jest.setup.js", ".next"]
 }

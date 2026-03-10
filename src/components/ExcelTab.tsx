@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Upload, FileSpreadsheet, AlertCircle, Download, Trash2, Copy, CheckCircle2, Code2, Database, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import type { ConfigRow } from '@/components/CodeToNameConfig';
+import type { GlobalRule } from '@/lib/config-defaults';
 
 interface ExcelData {
   headers: string[];
@@ -18,19 +20,13 @@ interface ExcelData {
   sheetName: string;
 }
 
-interface GlobalRule {
-  id: string;
-  keywords: string[];
-  matchType: 'contains' | 'equals' | 'prefix' | 'suffix';
-  targetField: 'name' | 'comment';
-  targetDatabases: string[];
-  dataTypes: Record<string, string>;
-  typeParams: Record<string, { precision?: number; scale?: number; length?: number; }>;
-  priority: number;
+interface ExcelTabProps {
+  rules: GlobalRule[];
+  codeToNameConfig: ConfigRow[];
 }
 
-export default function ExcelTab() {
-  const { success, error: toastError, warning, info } = useToast();
+export default function ExcelTab({ rules, codeToNameConfig }: ExcelTabProps) {
+  const { success, error: toastError, warning } = useToast();
   
   const [data, setData] = useState<ExcelData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,89 +50,6 @@ export default function ExcelTab() {
   // 用于存储最近一次生成的码转名字段信息（用于 DWD 生成）
   const codeToNameFieldsRef = useRef<Map<number, { name: string; desc: string }[]>>(new Map());
   
-  // 规则管理器的规则
-  const [globalRules, setGlobalRules] = useState<GlobalRule[]>([]);
-  
-  // 触发重新生成的标记
-  const [refreshDWD, setRefreshDWD] = useState(0);
-  const [refreshInsert, setRefreshInsert] = useState(0);
-
-  // 页面加载时从 localStorage 恢复规则
-  useEffect(() => {
-    console.log('=== ExcelTab 组件加载 ===');
-    console.log('环境:', process.env.NODE_ENV);
-    console.log('域名:', window.location.hostname);
-
-    const loadRules = () => {
-      const saved = localStorage.getItem('ddl_generator_global_rules');
-      console.log('📥 ExcelTab 从 localStorage 读取规则:', saved);
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          console.log('✅ ExcelTab 解析规则数量:', parsed.length);
-          console.log('✅ ExcelTab 解析规则详情:', JSON.stringify(parsed, null, 2));
-          setGlobalRules(parsed);
-        } catch (e) {
-          console.error('❌ ExcelTab 解析规则失败:', e);
-        }
-      } else {
-        console.log('ℹ️ ExcelTab localStorage 中没有规则');
-      }
-    };
-
-    // 初始加载
-    loadRules();
-
-    // 监听 localStorage 变化（当规则管理器更新规则时触发）
-    const handleStorageChange = (e: StorageEvent) => {
-      // 监听规则管理器的变化
-      if (e.key === 'ddl_generator_global_rules' && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          console.log('规则更新，数量:', parsed.length);
-          console.log('第一个规则:', parsed[0]);
-          setGlobalRules(parsed);
-          // 触发 DWD 重新生成
-          setRefreshDWD(prev => prev + 1);
-        } catch (err) {
-          console.error('Failed to update rules from storage:', err);
-        }
-      }
-
-      // 监听码转名维表配置的变化
-      if (e.key === 'codeToNameConfig') {
-        console.log('码转名配置更新');
-        // 触发 INSERT 语句重新生成
-        setRefreshInsert(prev => prev + 1);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
-    // 清理事件监听器
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
-
-  // 当规则变化时，重新生成 DWD SQL
-  useEffect(() => {
-    if (data && dwdTableName && refreshDWD > 0) {
-      // 直接生成 DWD（不需要 setTimeout）
-      // inferFieldType 内部会从 localStorage 读取最新规则
-      generateDWDSQL();
-    }
-  }, [refreshDWD, data, dwdTableName, globalRules]);
-
-  // 已改为手动生成，不再自动生成 INSERT
-  // useEffect(() => {
-  //   if (data && refreshInsert > 0) {
-  //     // 稍微延迟以确保状态已更新
-  //     setTimeout(() => {
-  //       generateInsertSQL();
-  //     }, 100);
-  //   }
-  // }, [refreshInsert, data]);
 
   // 根据字段名和注释推断字段类型（使用规则管理器的规则）
   const inferFieldType = (fieldName: string, fieldComment: string): string => {
@@ -144,30 +57,8 @@ export default function ExcelTab() {
     const safeFieldName = fieldName || '';
     const safeFieldComment = fieldComment || '';
 
-    // 直接从 localStorage 读取最新的规则（确保使用最新规则）
-    let rulesToUse = globalRules;
-    try {
-      const savedRules = localStorage.getItem('ddl_generator_global_rules');
-      if (savedRules) {
-        const parsed = JSON.parse(savedRules);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          rulesToUse = parsed;
-          console.log('🔍 inferFieldType: 使用 localStorage 中的最新规则，数量:', parsed.length);
-          // 打印所有规则的 matchType
-          console.log('📋 所有规则的匹配类型:', parsed.map((r: any) => ({
-            keywords: r.keywords,
-            matchType: r.matchType,
-            targetField: r.targetField,
-            dataType: r.dataTypes?.spark
-          })));
-        }
-      }
-    } catch (e) {
-      console.error('❌ inferFieldType: 读取规则失败:', e);
-    }
-
     // 优先使用规则管理器的规则
-    for (const rule of rulesToUse) {
+    for (const rule of rules) {
       // 安全处理空值和类型
       const matchField = rule.targetField === 'name' 
         ? safeFieldName.toLowerCase() 
@@ -194,16 +85,6 @@ export default function ExcelTab() {
         matches = keywords.some(keyword => matchField.endsWith(keyword.trim()));
       }
 
-      // 打印匹配过程的详细信息
-      if (rule.matchType !== 'contains') {
-        console.log(`🔎 测试规则 [${rule.matchType}]:`, {
-          matchField,
-          keywords,
-          ruleId: rule.id,
-          result: matches
-        });
-      }
-
       if (matches) {
         // 安全获取数据类型，添加默认值
         const sparkType = rule.dataTypes?.['spark'] || rule.dataTypes?.['mysql'] || rule.dataTypes?.['starrocks'] || 'STRING';
@@ -227,21 +108,16 @@ export default function ExcelTab() {
           }
           
           // 如果是 DECIMAL 类型但没有参数，使用默认参数
-          if ((upper.includes('DECIMAL') || upper.includes('NUMERIC')) && 
+          if ((upper.includes('DECIMAL') || upper.includes('NUMERIC')) &&
               params.precision === undefined) {
-            console.warn(`⚠️ DECIMAL 类型 [${safeFieldName}] 缺少参数，使用默认参数 (24,6)`);
             return `${fullType}(24,6)`;
           }
-          
-          // 只在匹配到规则时打印日志
-          console.log(`✅ 字段 [${safeFieldName}] 匹配规则: ${rule.matchType} [${keywords.join(', ')}] -> 类型: ${fullType}`);
           return fullType;
         }
       }
     }
 
     // 如果没有匹配到规则，使用固定的默认类型（ExcelTab 只生成 Spark SQL）
-    console.log(`ℹ️ 字段 [${safeFieldName}] 未匹配到任何规则，使用默认类型 STRING`);
     return 'STRING';
   };
 
@@ -743,16 +619,7 @@ LIFECYCLE 10;`;
     setCodeToNameFieldsMap(new Map());
     codeToNameFieldsRef.current = new Map();
 
-    // 从localStorage加载码转名维表配置
-    let codeToNameConfigs: any[] = [];
-    try {
-      const savedData = localStorage.getItem('codeToNameConfig');
-      if (savedData) {
-        codeToNameConfigs = JSON.parse(savedData);
-      }
-    } catch (err) {
-      console.error('加载码转名维表配置失败', err);
-    }
+    const codeToNameConfigs = codeToNameConfig || [];
 
     // 先提取所有字段名，用于检测重复
     const allFieldNames = data.rows
@@ -816,7 +683,7 @@ LIFECYCLE 10;`;
     fields.forEach((field, index) => {
       const rawFieldName = field.source.replace(/^m\./, '');
       const matchedConfigs = codeToNameConfigs.filter(
-        (config: any) => config.mainTableField === rawFieldName
+        (config) => config.mainTableField === rawFieldName
       );
       if (matchedConfigs.length > 0) {
         fieldsNeedingCodeToName.add(index);
@@ -868,7 +735,7 @@ LIFECYCLE 10;`;
       
       // 在码转名维表配置中查找匹配
       const matchedConfigs = codeToNameConfigs.filter(
-        (config: any) => config.mainTableField === rawFieldName
+        (config) => config.mainTableField === rawFieldName
       );
 
       matchedConfigs.forEach(config => {
@@ -880,7 +747,7 @@ LIFECYCLE 10;`;
             aliasMap.set(config.tableEnName, tableAlias);
             aliasCounter++;
           } else {
-            tableAlias = aliasMap.get(config.tableEnName);
+            tableAlias = aliasMap.get(config.tableEnName) || '';
           }
         }
         
@@ -1263,33 +1130,7 @@ etlField + '\n' +
 
                   <div className="space-y-2">
                     <Button
-                      onClick={() => {
-                        // 点击生成按钮时，重新加载规则管理器的规则
-                        console.log('=== 生成 DWD：重新检测规则管理器 ===');
-                        const savedRules = localStorage.getItem('ddl_generator_global_rules');
-                        console.log('📥 localStorage 中的规则:', savedRules);
-                        if (savedRules) {
-                          try {
-                            const parsed = JSON.parse(savedRules);
-                            console.log('✅ 从 localStorage 重新加载规则，数量:', parsed.length);
-                            console.log('✅ 规则详情:', JSON.stringify(parsed, null, 2));
-                            setGlobalRules(parsed);
-                            
-                            // 直接生成 DWD
-                            // 注意：由于 inferFieldType 内部会从 localStorage 读取最新规则，
-                            // 所以即使 globalRules state 未及时更新，也能使用最新规则
-                            console.log('🔄 开始生成 DWD');
-                            generateDWDSQL(codeToNameFieldsRef.current);
-                          } catch (e) {
-                            console.error('❌ 重新加载规则失败:', e);
-                            // 即使加载失败，也尝试生成 DWD
-                            generateDWDSQL(codeToNameFieldsRef.current);
-                          }
-                        } else {
-                          console.log('localStorage 中没有规则，直接生成 DWD');
-                          generateDWDSQL(codeToNameFieldsRef.current);
-                        }
-                      }}
+                      onClick={() => generateDWDSQL(codeToNameFieldsRef.current)}
                       variant="default"
                       className="w-full bg-blue-600 hover:bg-blue-700 gap-2"
                     >

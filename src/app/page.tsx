@@ -1,86 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ExcelTab from '@/components/ExcelTab';
 import CodeToNameConfig from '@/components/CodeToNameConfig';
 import AlterTab from '@/components/AlterTab';
 import { useToast } from '@/hooks/use-toast';
+import type { ConfigRow } from '@/components/CodeToNameConfig';
+import {
+  DEFAULT_GLOBAL_RULES,
+  DEFAULT_RULE_SCOPE_KEY,
+  type GlobalRule,
+} from '@/lib/config-defaults';
 
-interface GlobalRule {
-  id: string;
-  keywords: string[];
-  matchType: 'contains' | 'equals' | 'prefix' | 'suffix';
-  targetField: 'name' | 'comment';
-  targetDatabases: string[];
-  dataTypes: Record<string, string>;
-  typeParams: Record<string, { precision?: number; scale?: number; length?: number; }>;
-  priority: number;
-}
-
-const DEFAULT_GLOBAL_RULES: GlobalRule[] = [
-  {
-    id: 'rule-1',
-    keywords: ['amt', 'amount', 'price', '金额', '价格'],
-    matchType: 'contains',
-    targetField: 'name',
-    targetDatabases: ['spark'],
-    dataTypes: {
-      spark: 'DECIMAL'
-    },
-    typeParams: {
-      spark: { precision: 24, scale: 6 }
-    },
-    priority: 1
-  },
-  {
-    id: 'rule-2',
-    keywords: ['date', '日期'],
-    matchType: 'contains',
-    targetField: 'name',
-    targetDatabases: ['spark'],
-    dataTypes: {
-      spark: 'DATE'
-    },
-    typeParams: {},
-    priority: 1
-  },
-  {
-    id: 'rule-3',
-    keywords: ['time', 'timestamp', '时间'],
-    matchType: 'contains',
-    targetField: 'name',
-    targetDatabases: ['spark'],
-    dataTypes: {
-      spark: 'TIMESTAMP'
-    },
-    typeParams: {},
-    priority: 1
-  },
-  {
-    id: 'rule-4',
-    keywords: ['id', 'icode'],
-    matchType: 'contains',
-    targetField: 'name',
-    targetDatabases: ['spark'],
-    dataTypes: {
-      spark: 'STRING'
-    },
-    typeParams: {},
-    priority: 1
-  },
-  {
-    id: 'rule-5',
-    keywords: ['name', '名称', '描述', '备注'],
-    matchType: 'contains',
-    targetField: 'name',
-    targetDatabases: ['spark'],
-    dataTypes: {
-      spark: 'STRING'
-    },
-    typeParams: {},
-    priority: 1
-  }
-];
+const LEGACY_RULES_KEY = 'ddl_generator_global_rules';
 
 const DB_LABELS = {
   spark: 'Spark SQL',
@@ -93,6 +25,102 @@ const ALL_TYPE_OPTIONS = {
   mysql: ['TINYINT', 'SMALLINT', 'MEDIUMINT', 'INT', 'INTEGER', 'BIGINT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC', 'DATE', 'DATETIME', 'TIMESTAMP', 'TIME', 'YEAR', 'CHAR', 'VARCHAR', 'BINARY', 'VARBINARY', 'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB', 'TINYTEXT', 'TEXT', 'MEDIUMTEXT', 'LONGTEXT', 'ENUM', 'SET', 'BOOLEAN', 'JSON'],
   starrocks: ['TINYINT', 'SMALLINT', 'INT', 'BIGINT', 'LARGEINT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'CHAR', 'VARCHAR', 'STRING', 'BOOLEAN', 'JSON', 'BITMAP', 'HLL', 'PERCENTILE', 'ARRAY', 'MAP', 'STRUCT']
 };
+
+interface ConfigApiResponse<T> {
+  data: T;
+  version: string | null;
+  updatedAt: string | null;
+  error?: string;
+}
+
+function migrateLegacyRuleFormat(legacyRules: any[]): GlobalRule[] {
+  if (!Array.isArray(legacyRules)) return DEFAULT_GLOBAL_RULES;
+  if (legacyRules.length === 0 || legacyRules[0].typeParams) {
+    return legacyRules as GlobalRule[];
+  }
+
+  return legacyRules.map((rule: any) => {
+    const typeParams: Record<string, any> = {};
+    const dataTypes: Record<string, string> = {};
+
+    Object.entries(rule.dataTypes || {}).forEach(([dbType, dataType]: [string, any]) => {
+      const strType = String(dataType || '');
+      const upper = strType.toUpperCase();
+
+      const decimalMatch = strType.match(/^(DECIMAL|NUMERIC)\((\d+),\s*(\d+)\)$/i);
+      if (decimalMatch) {
+        dataTypes[dbType] = decimalMatch[1];
+        typeParams[dbType] = {
+          precision: Number(decimalMatch[2]),
+          scale: Number(decimalMatch[3]),
+        };
+        return;
+      }
+
+      if (upper.includes('VARCHAR') || upper.includes('CHAR')) {
+        const varcharMatch = strType.match(/^(VARCHAR|CHAR)\((\d+)\)$/i);
+        if (varcharMatch) {
+          dataTypes[dbType] = varcharMatch[1];
+          typeParams[dbType] = { length: Number(varcharMatch[2]) };
+          return;
+        }
+      }
+
+      if (upper.includes('FLOAT') || upper.includes('DOUBLE')) {
+        const floatMatch = strType.match(/^(FLOAT|DOUBLE)\((\d+)\)$/i);
+        if (floatMatch) {
+          dataTypes[dbType] = floatMatch[1];
+          typeParams[dbType] = { precision: Number(floatMatch[2]) };
+          return;
+        }
+      }
+
+      dataTypes[dbType] = strType;
+    });
+
+    return {
+      ...rule,
+      dataTypes,
+      typeParams,
+    } as GlobalRule;
+  });
+}
+
+async function fetchRulesConfigFromApi(): Promise<ConfigApiResponse<GlobalRule[]>> {
+  const response = await fetch(`/api/config/rules?scopeKey=${encodeURIComponent(DEFAULT_RULE_SCOPE_KEY)}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || '加载规则失败');
+  }
+  return response.json();
+}
+
+async function saveRulesConfigToApi(
+  rulesToSave: GlobalRule[],
+  version?: string | null,
+): Promise<ConfigApiResponse<GlobalRule[]>> {
+  const response = await fetch('/api/config/rules', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scopeKey: DEFAULT_RULE_SCOPE_KEY,
+      data: rulesToSave,
+      version: version ?? null,
+      updatedBy: 'web-ui',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.error || '保存规则失败';
+    if (response.status === 409) {
+      throw new Error(`CONFLICT:${message}`);
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
 
 // 关键词输入组件 - 使用本地状态避免重新渲染导致光标跳动
 function KeywordInput({
@@ -142,6 +170,11 @@ function KeywordInput({
 
 export default function Home() {
   const { success, error: toastError, warning } = useToast();
+  const toastHandlersRef = useRef({ success, error: toastError, warning });
+
+  useEffect(() => {
+    toastHandlersRef.current = { success, error: toastError, warning };
+  }, [success, toastError, warning]);
   
   const [activeTab, setActiveTab] = useState('excel');  // 'excel' | 'generator' | 'alter' | 'rules' | 'codeToName'
   const [sqlInput, setSqlInput] = useState('');
@@ -150,106 +183,94 @@ export default function Home() {
   const [error, setError] = useState('');
   const [selectedDbTypes, setSelectedDbTypes] = useState<string[]>(['spark']);
   const [globalRules, setGlobalRules] = useState<GlobalRule[]>(DEFAULT_GLOBAL_RULES);
+  const [savedRules, setSavedRules] = useState<GlobalRule[]>(DEFAULT_GLOBAL_RULES);
+  const [rulesVersion, setRulesVersion] = useState<string | null>(null);
+  const [codeToNameConfig, setCodeToNameConfig] = useState<ConfigRow[]>([]);
   const [dirtyRules, setDirtyRules] = useState<Set<string>>(new Set()); // 记录已修改但未保存的规则ID
+  const handleCodeToNameChange = useCallback((rows: ConfigRow[]) => {
+    setCodeToNameConfig(rows);
+  }, []);
 
-  // 页面加载时从 localStorage 恢复规则
   useEffect(() => {
-    console.log('=== 规则管理器页面加载 ===');
-    const saved = localStorage.getItem('ddl_generator_global_rules');
-    if (saved) {
+    const loadRules = async () => {
       try {
-        const parsed = JSON.parse(saved);
-        console.log('✅ 从 localStorage 加载规则数量:', parsed.length);
-        
-        // 检查是否是新格式（包含typeParams）
-        if (parsed.length > 0 && !parsed[0].typeParams) {
-          console.log('⚠️ 检测到旧格式规则，开始迁移...');
-          // 迁移旧数据到新格式
-          const migrated = parsed.map((rule: any) => {
-            // 从dataType中提取参数
-            const typeParams: Record<string, any> = {};
-            const dataTypes: Record<string, string> = {};
+        const remote = await fetchRulesConfigFromApi();
+        const normalizedRules = migrateLegacyRuleFormat(remote.data || DEFAULT_GLOBAL_RULES);
+        setGlobalRules(normalizedRules);
+        setSavedRules(normalizedRules);
+        setRulesVersion(remote.version ?? null);
 
-            Object.entries(rule.dataTypes || {}).forEach(([dbType, dataType]: [string, any]) => {
-              const strType = dataType as string;
-              const upper = strType.toUpperCase();
-
-              // DECIMAL(24, 6) -> DECIMAL + {precision: 24, scale: 6}
-              const decimalMatch = strType.match(/^(DECIMAL|NUMERIC)\((\d+),\s*(\d+)\)$/i);
-              if (decimalMatch) {
-                dataTypes[dbType] = decimalMatch[1];
-                typeParams[dbType] = {
-                  precision: parseInt(decimalMatch[2]),
-                  scale: parseInt(decimalMatch[3])
-                };
+        if (!remote.version) {
+          const legacyRaw = localStorage.getItem(LEGACY_RULES_KEY);
+          if (legacyRaw) {
+            try {
+              const legacyParsed = JSON.parse(legacyRaw);
+              const migratedRules = migrateLegacyRuleFormat(legacyParsed);
+              const shouldMigrate = window.confirm('检测到浏览器中的历史规则，是否迁移到服务器配置？');
+              if (shouldMigrate) {
+                const migrated = await saveRulesConfigToApi(migratedRules, null);
+                setGlobalRules(migrated.data);
+                setSavedRules(migrated.data);
+                setRulesVersion(migrated.version ?? null);
+                localStorage.removeItem(LEGACY_RULES_KEY);
+                toastHandlersRef.current.success('历史规则已迁移到服务器');
               }
-              // VARCHAR(255) -> VARCHAR + {length: 255}
-              else if (upper.includes('VARCHAR') || upper.includes('CHAR')) {
-                const varcharMatch = strType.match(/^(VARCHAR|CHAR)\((\d+)\)$/i);
-                if (varcharMatch) {
-                  dataTypes[dbType] = varcharMatch[1];
-                  typeParams[dbType] = {
-                    length: parseInt(varcharMatch[2])
-                  };
-                } else {
-                  dataTypes[dbType] = strType;
-                }
-              }
-              // FLOAT(53) -> FLOAT + {precision: 53}
-              else if (upper.includes('FLOAT') || upper.includes('DOUBLE')) {
-                const floatMatch = strType.match(/^(FLOAT|DOUBLE)\((\d+)\)$/i);
-                if (floatMatch) {
-                  dataTypes[dbType] = floatMatch[1];
-                  typeParams[dbType] = {
-                    precision: parseInt(floatMatch[2])
-                  };
-                } else {
-                  dataTypes[dbType] = strType;
-                }
-              }
-              else {
-                dataTypes[dbType] = strType;
-              }
-            });
-
-            return {
-              ...rule,
-              dataTypes,
-              typeParams
-            };
-          });
-          
-          console.log('✅ 规则迁移完成');
-          setGlobalRules(migrated);
-          // 保存迁移后的数据
-          localStorage.setItem('ddl_generator_global_rules', JSON.stringify(migrated));
-        } else {
-          // 新格式，直接使用
-          console.log('✅ 新格式规则，直接使用');
-          setGlobalRules(parsed);
+            } catch {
+              // 忽略无法解析的旧数据
+            }
+          }
         }
       } catch (e) {
         console.error('❌ 规则加载失败:', e);
-        // 加载失败时使用默认规则
-        console.log('ℹ️ 使用默认规则');
+        toastHandlersRef.current.error(e instanceof Error ? e.message : '规则加载失败');
         setGlobalRules(DEFAULT_GLOBAL_RULES);
+        setSavedRules(DEFAULT_GLOBAL_RULES);
+        setRulesVersion(null);
       }
-    } else {
-      console.log('ℹ️ localStorage 中没有规则，使用默认规则');
-      setGlobalRules(DEFAULT_GLOBAL_RULES);
-    }
+    };
+
+    void loadRules();
   }, []);
 
-  // 保存规则到 localStorage
-  const saveRules = (rulesToSave: GlobalRule[] = globalRules) => {
+  const saveRules = async (
+    rulesToSave: GlobalRule[] = globalRules,
+    options?: { savedRuleIds?: string[]; silent?: boolean },
+  ) => {
     try {
-      console.log('💾 保存规则到 localStorage，数量:', rulesToSave.length);
-      console.log('保存的规则详情:', JSON.stringify(rulesToSave, null, 2));
-      localStorage.setItem('ddl_generator_global_rules', JSON.stringify(rulesToSave));
-      console.log('✅ localStorage 当前内容:', localStorage.getItem('ddl_generator_global_rules'));
-      setDirtyRules(new Set()); // 清除所有脏标记
+      const saved = await saveRulesConfigToApi(rulesToSave, rulesVersion);
+      const nextRules = Array.isArray(saved.data) ? saved.data : rulesToSave;
+      setGlobalRules(nextRules);
+      setSavedRules(nextRules);
+      setRulesVersion(saved.version ?? null);
+
+      if (options?.savedRuleIds?.length) {
+        setDirtyRules(prev => new Set([...prev].filter(id => !options.savedRuleIds?.includes(id))));
+      } else {
+        setDirtyRules(new Set());
+      }
+
+      if (!options?.silent) {
+        success('规则已保存');
+      }
+      return true;
     } catch (e) {
-      console.error('❌ 规则保存失败:', e);
+      const message = e instanceof Error ? e.message : '规则保存失败';
+      if (message.startsWith('CONFLICT:')) {
+        toastError('规则已被其他用户更新，请刷新后重试');
+        try {
+          const latest = await fetchRulesConfigFromApi();
+          const latestRules = migrateLegacyRuleFormat(latest.data || DEFAULT_GLOBAL_RULES);
+          setGlobalRules(latestRules);
+          setSavedRules(latestRules);
+          setRulesVersion(latest.version ?? null);
+          setDirtyRules(new Set());
+        } catch {
+          // 忽略二次加载失败
+        }
+      } else {
+        toastError(message);
+      }
+      return false;
     }
   };
 
@@ -263,20 +284,23 @@ export default function Home() {
 
     rules.forEach(rule => {
       rule.targetDatabases.forEach(dbType => {
-        const baseType = rule.dataTypes[dbType as keyof typeof rule.dataTypes] || rule.dataTypes['spark' as keyof typeof rule.dataTypes];
+        const baseType =
+          rule.dataTypes[dbType as keyof typeof rule.dataTypes] ||
+          rule.dataTypes['spark' as keyof typeof rule.dataTypes] ||
+          'STRING';
         const params = rule.typeParams[dbType as keyof typeof rule.typeParams] || {};
 
         // 构建带参数的完整类型字符串
         let fullType = baseType;
         const upper = baseType.toUpperCase();
 
-        if (params.precision !== undefined && params.scale !== undefined &&
+        if (Number.isFinite(params.precision) && Number.isFinite(params.scale) &&
             (upper.includes('DECIMAL') || upper.includes('NUMERIC'))) {
           fullType = `${baseType}(${params.precision}, ${params.scale})`;
-        } else if (params.length !== undefined &&
+        } else if (Number.isFinite(params.length) &&
                    (upper.includes('VARCHAR') || upper.includes('CHAR'))) {
           fullType = `${baseType}(${params.length})`;
-        } else if (params.precision !== undefined &&
+        } else if (Number.isFinite(params.precision) &&
                    (upper.includes('FLOAT') || upper.includes('DOUBLE'))) {
           fullType = `${baseType}(${params.precision})`;
         }
@@ -348,17 +372,22 @@ export default function Home() {
 
 
 
-  const handleResetRules = () => {
+  const handleResetRules = async () => {
     const nextRules = JSON.parse(JSON.stringify(DEFAULT_GLOBAL_RULES)) as GlobalRule[];
     setGlobalRules(nextRules);
-    saveRules(nextRules);
-    success('规则已重置为默认值');
+    const ok = await saveRules(nextRules, { silent: true });
+    if (ok) {
+      success('规则已重置为默认值并保存到服务器');
+    }
   };
 
-  const handleClearLocalStorage = () => {
-    localStorage.removeItem('ddl_generator_global_rules');
-    setGlobalRules(JSON.parse(JSON.stringify(DEFAULT_GLOBAL_RULES)));
-    success('已清除 localStorage，规则已恢复为默认值');
+  const handleClearLocalStorage = async () => {
+    const nextRules = JSON.parse(JSON.stringify(DEFAULT_GLOBAL_RULES)) as GlobalRule[];
+    setGlobalRules(nextRules);
+    const ok = await saveRules(nextRules, { silent: true });
+    if (ok) {
+      success('已清空服务器规则并恢复默认值');
+    }
   };
 
   const addRule = () => {
@@ -394,7 +423,7 @@ export default function Home() {
   };
 
   // 手动保存单个规则（添加验证）
-  const saveSingleRule = (id: string) => {
+  const saveSingleRule = async (id: string) => {
     // 验证规则数据
     const ruleToSave = globalRules.find(r => r.id === id);
     if (!ruleToSave) {
@@ -422,14 +451,9 @@ export default function Home() {
       }
     }
 
-    try {
-      localStorage.setItem('ddl_generator_global_rules', JSON.stringify(globalRules));
-      console.log('✅ 规则已保存到 localStorage');
-      setDirtyRules(new Set([...dirtyRules].filter(r => r !== id))); // 清除脏标记
+    const ok = await saveRules(globalRules, { savedRuleIds: [id], silent: true });
+    if (ok) {
       success('规则已保存');
-    } catch (e) {
-      console.error('❌ 规则保存失败:', e);
-      toastError('保存规则失败，可能是存储空间不足');
     }
   };
 
@@ -577,7 +601,10 @@ export default function Home() {
             <input
               type="number"
               value={params.precision || 24}
-              onChange={(e) => updateTypeParam(rule.id, dbType, { precision: parseInt(e.target.value) })}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                updateTypeParam(rule.id, dbType, { precision: Number.isFinite(value) ? value : undefined });
+              }}
               className="w-full px-2 py-1 text-xs border rounded"
               min="1"
               max="65"
@@ -588,7 +615,10 @@ export default function Home() {
             <input
               type="number"
               value={params.scale || 6}
-              onChange={(e) => updateTypeParam(rule.id, dbType, { scale: parseInt(e.target.value) })}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                updateTypeParam(rule.id, dbType, { scale: Number.isFinite(value) ? value : undefined });
+              }}
               className="w-full px-2 py-1 text-xs border rounded"
               min="0"
               max="30"
@@ -603,7 +633,10 @@ export default function Home() {
           <input
             type="number"
             value={params.length || 255}
-            onChange={(e) => updateTypeParam(rule.id, dbType, { length: parseInt(e.target.value) })}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              updateTypeParam(rule.id, dbType, { length: Number.isFinite(value) ? value : undefined });
+            }}
             className="w-full px-2 py-1 text-xs border rounded"
             min="1"
             max="65535"
@@ -618,7 +651,7 @@ export default function Home() {
             type="number"
             value={params.precision || ''}
             onChange={(e) => updateTypeParam(rule.id, dbType, {
-              precision: e.target.value ? parseInt(e.target.value) : undefined
+              precision: e.target.value && Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : undefined
             })}
             className="w-full px-2 py-1 text-xs border rounded"
             min="1"
@@ -693,7 +726,7 @@ export default function Home() {
 
         {/* Excel上传标签页 */}
         <div style={{ display: activeTab === 'excel' ? 'block' : 'none' }}>
-          <ExcelTab />
+          <ExcelTab rules={savedRules} codeToNameConfig={codeToNameConfig} />
         </div>
 
         {/* DDL生成器标签页 */}
@@ -794,13 +827,13 @@ export default function Home() {
             {/* 操作按钮 */}
             <div className="flex gap-3 mb-6 flex-wrap">
               <button
-                onClick={handleResetRules}
+                onClick={() => void handleResetRules()}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
               >
                 🔄 重置规则
               </button>
               <button
-                onClick={handleClearLocalStorage}
+                onClick={() => void handleClearLocalStorage()}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
                 🗑️ 清除缓存
@@ -808,7 +841,7 @@ export default function Home() {
             </div>
 
             <div className="bg-blue-50 p-4 rounded-lg mb-6 text-sm text-blue-700">
-              <strong>💡 提示：</strong> 编辑规则后请点击"保存规则"按钮，规则将保存到浏览器缓存。<br/>
+              <strong>💡 提示：</strong> 编辑规则后请点击"保存规则"按钮，规则将保存到服务器配置。<br/>
               <strong>匹配方式说明：</strong>
               <ul className="list-disc list-inside ml-4 mt-1">
                 <li><strong>包含</strong> - 字段名或注释中包含关键词（如 "amt" 匹配 "amount"）</li>
@@ -820,7 +853,7 @@ export default function Home() {
 
             {/* 规则列表 */}
             <div className="space-y-4">
-              {globalRules.map((rule, index) => (
+              {globalRules.map((rule) => (
                 <div 
                   key={rule.id} 
                   className={`border rounded-xl p-4 bg-gray-50 transition-colors ${
@@ -974,7 +1007,7 @@ export default function Home() {
                   {/* 操作按钮 */}
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => saveSingleRule(rule.id)}
+                      onClick={() => void saveSingleRule(rule.id)}
                       className={`px-4 py-1.5 text-white text-sm rounded-lg transition-colors ${
                         dirtyRules.has(rule.id)
                           ? 'bg-blue-600 hover:bg-blue-700'
@@ -1009,13 +1042,7 @@ export default function Home() {
 
         {/* 码转名配置标签页 */}
         <div style={{ display: activeTab === 'codeToName' ? 'block' : 'none' }}>
-          <CodeToNameConfig onDataChange={() => {
-            // 触发 storage 事件，通知 ExcelTab 重新生成 INSERT 和 DWD
-            window.dispatchEvent(new StorageEvent('storage', {
-              key: 'codeToNameConfig',
-              newValue: localStorage.getItem('codeToNameConfig') || ''
-            }));
-          }} />
+          <CodeToNameConfig onDataChange={handleCodeToNameChange} />
         </div>
       </div>
     </div>

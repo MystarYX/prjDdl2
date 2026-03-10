@@ -24,7 +24,7 @@ const DB_LABELS = {
 const DEFAULT_TYPES = {
   spark: 'STRING',
   mysql: 'VARCHAR(256)',
-  starrocks: 'VARCHAR(512)'
+  starrocks: 'VARCHAR(256)'
 };
 
 // 解析字段文本
