@@ -254,6 +254,54 @@ export default function ExcelTab({ rules, codeToNameConfig }: ExcelTabProps) {
     }
   };
 
+  // 下载示例 Excel 文件
+  const handleDownloadSample = () => {
+    try {
+      // 示例数据：符合 ODS / DWD 双模式
+      const sampleHeaders = ['来源表', '来源表描述', '来源字段', '来源字段描述', '表英文名', '表中文名', '字段名', '字段描述', '字段类型'];
+      const sampleRows = [
+        ['source_orders',   '订单来源表',     't.order_id',     '订单ID',     'dwd_orders',   '订单明细表',   'order_id',    '订单ID',    'STRING'],
+        ['source_orders',   '订单来源表',     't.order_amt',    '订单金额',   'dwd_orders',   '订单明细表',   'order_amt',   '订单金额',  'DECIMAL(24,6)'],
+        ['source_orders',   '订单来源表',     't.order_date',   '订单日期',   'dwd_orders',   '订单明细表',   'order_date',  '订单日期',  'DATE'],
+        ['source_orders',   '订单来源表',     't.user_id',      '用户ID',     'dwd_orders',   '订单明细表',   'user_id',     '用户ID',    'STRING'],
+        ['source_orders',   '订单来源表',     't.user_name',    '用户名称',   'dwd_orders',   '订单明细表',   'user_name',   '用户名称',  'STRING'],
+        ['source_orders',   '订单来源表',     't.order_status', '订单状态',   'dwd_orders',   '订单明细表',   'order_status','订单状态',  'STRING'],
+        ['source_orders',   '订单来源表',     't.create_time',  '创建时间',   'dwd_orders',   '订单明细表',   'create_time', '创建时间',  'TIMESTAMP'],
+        ['source_orders',   '订单来源表',     't.pay_time',     '支付时间',   'dwd_orders',   '订单明细表',   'pay_time',    '支付时间',  'TIMESTAMP'],
+        ['source_orders',   '订单来源表',     't.total_amt',    '总金额',     'dwd_orders',   '订单明细表',   'total_amt',   '总金额',    'DECIMAL(24,6)'],
+        ['source_product',  '商品来源表',     'p.product_id',   '商品ID',     'dwd_orders',   '订单明细表',   'product_id',  '商品ID',    'STRING'],
+        ['source_product',  '商品来源表',     'p.product_name', '商品名称',   'dwd_orders',   '订单明细表',   'product_name','商品名称',  'STRING'],
+        ['source_product',  '商品来源表',     'p.category',     '商品分类',   'dwd_orders',   '订单明细表',   'category',    '商品分类',  'STRING'],
+        ['source_product',  '商品来源表',     'p.price',        '商品单价',   'dwd_orders',   '订单明细表',   'price',       '商品单价',  'DECIMAL(24,6)'],
+      ];
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([sampleHeaders, ...sampleRows]);
+
+      // 设置列宽
+      ws['!cols'] = sampleHeaders.map(() => ({ wch: 16 }));
+
+      XLSX.utils.book_append_sheet(wb, ws, '示例数据');
+
+      // 生成并下载
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/octet-stream' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'DDL生成器_示例数据.xlsx');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      success('示例 Excel 已下载，上传后即可体验自动填充');
+    } catch (err) {
+      console.error('下载示例文件失败:', err);
+      toastError('下载示例文件失败');
+    }
+  };
+
   const exportToCSV = () => {
     if (!data) return;
 
@@ -863,6 +911,29 @@ etlField + '\n' +
             上传 Excel 文件，手动生成 DWD、ODS 和 INSERT SQL 语句
           </p>
         </div>
+
+        {/* 示例Excel下载 */}
+        {!data && (
+          <div className="max-w-2xl mx-auto mb-4">
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-dashed border-blue-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-800 text-sm">📥 没有示例数据？</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    下载示例 Excel 文件，上传后体验自动填充功能
+                  </p>
+                </div>
+                <button
+                  onClick={handleDownloadSample}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  下载示例Excel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 上传区域 */}
         {!data && (

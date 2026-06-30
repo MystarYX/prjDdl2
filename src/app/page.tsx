@@ -122,6 +122,119 @@ async function saveRulesConfigToApi(
   return response.json();
 }
 
+// ========== 示例案例 ==========
+
+interface SampleCase {
+  label: string;
+  sql: string;
+  dbTypes: string[];
+}
+
+const SAMPLE_CASES: SampleCase[] = [
+  {
+    label: '📄 基础查询',
+    dbTypes: ['spark', 'mysql'],
+    sql: `SELECT
+  user_id       AS id,        -- 用户ID
+  user_name     AS name,      -- 用户名称
+  order_amount  AS amount,    -- 订单金额
+  order_date    AS biz_date,  -- 业务日期
+  create_time   AS gmt_create -- 创建时间
+FROM orders`,
+  },
+  {
+    label: '🔀 CASE WHEN',
+    dbTypes: ['spark'],
+    sql: `SELECT
+  user_id,
+  CASE
+    WHEN amount > 1000 AND status = 'PAID' THEN 'high'
+    WHEN amount > 100 THEN 'medium'
+    ELSE 'low'
+  END AS order_level, -- 订单等级
+  CASE
+    WHEN amount > 5000 THEN 'VIP'
+    ELSE 'normal'
+  END AS cust_type -- 客户类型
+FROM orders`,
+  },
+  {
+    label: '📊 聚合函数',
+    dbTypes: ['spark'],
+    sql: `SELECT
+  dept_id       AS dept_id,   -- 部门ID
+  COUNT(*)      AS total_cnt, -- 总数
+  SUM(amount)   AS sum_amt,   -- 总金额
+  AVG(price)    AS avg_price, -- 平均价格
+  MAX(amount)   AS max_amt,   -- 最大金额
+  MIN(amount)   AS min_amt    -- 最小金额
+FROM orders
+GROUP BY dept_id`,
+  },
+  {
+    label: '🔄 WITH CTE',
+    dbTypes: ['spark', 'mysql'],
+    sql: `WITH user_stats AS (
+  SELECT user_id, COUNT(*) AS order_count
+  FROM orders
+  GROUP BY user_id
+)
+SELECT
+  u.user_id       AS id,     -- 用户ID
+  u.user_name     AS name,   -- 用户名称
+  s.order_count   AS cnt     -- 订单数量
+FROM users u
+JOIN user_stats s ON u.user_id = s.user_id`,
+  },
+  {
+    label: '🏗️ CREATE TABLE',
+    dbTypes: ['spark'],
+    sql: `CREATE TABLE IF NOT EXISTS dwd_orders (
+  order_id    STRING         COMMENT '订单ID',
+  user_id     STRING         COMMENT '用户ID',
+  amount      DECIMAL(24,6)  COMMENT '订单金额',
+  status      STRING         COMMENT '订单状态',
+  create_time TIMESTAMP      COMMENT '创建时间'
+)`,
+  },
+  {
+    label: '💰 金额+日期',
+    dbTypes: ['spark', 'mysql', 'starrocks'],
+    sql: `SELECT
+  order_amount  AS amount,     -- 订单金额
+  trade_date    AS trans_date, -- 交易日期
+  create_time   AS gmt_create, -- 创建时间
+  user_icode    AS icode,      -- 用户编码
+  product_price AS price,      -- 商品单价
+  product_qty   AS qty         -- 商品数量
+FROM trade_records`,
+  },
+  {
+    label: '📋 字段列表',
+    dbTypes: ['spark'],
+    sql: `order_id,     -- 订单ID
+order_date,   -- 订单日期
+order_amt,    -- 订单金额
+order_status, -- 订单状态
+user_id,      -- 用户ID
+user_name,    -- 用户名称
+create_time,  -- 创建时间
+update_time   -- 更新时间`,
+  },
+  {
+    label: '🔗 多CTE',
+    dbTypes: ['spark'],
+    sql: `WITH
+  cte1 AS (SELECT user_id, name FROM users),
+  cte2 AS (SELECT user_id, amount FROM orders)
+SELECT
+  cte1.user_id AS uid,
+  cte1.name    AS uname,
+  cte2.amount  AS amt
+FROM cte1 JOIN cte2 ON cte1.user_id = cte2.user_id`,
+  },
+];
+
 // 关键词输入组件 - 使用本地状态避免重新渲染导致光标跳动
 function KeywordInput({
   value,
@@ -775,6 +888,38 @@ export default function Home() {
                     />
                     {label}
                   </label>
+                ))}
+              </div>
+            </div>
+
+            {/* 示例案例 */}
+            <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-semibold text-gray-800">📋 示例案例（点击自动填充）</h3>
+                <button
+                  onClick={() => {
+                    setSqlInput('');
+                    setDdlOutput('');
+                  }}
+                  className="text-sm px-3 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
+                >
+                  清空
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {SAMPLE_CASES.map((sample, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setSqlInput(sample.sql);
+                      setSelectedDbTypes(sample.dbTypes);
+                      setDdlOutput('');
+                    }}
+                    className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-300 transition-colors whitespace-nowrap"
+                    title={sample.sql.substring(0, 120) + (sample.sql.length > 120 ? '...' : '')}
+                  >
+                    {sample.label}
+                  </button>
                 ))}
               </div>
             </div>
