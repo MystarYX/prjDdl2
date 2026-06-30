@@ -297,6 +297,44 @@ export default function CodeToNameConfig({ onDataChange }: CodeToNameConfigProps
             <CardDescription>当前共有 {rows.length} 条配置</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
+            {/* 示例数据 */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-xs text-gray-500 mr-1">📋示例</span>
+              <button
+                onClick={() => {
+                  const sampleRows: ConfigRow[] = [
+                    { id: `sample-${Date.now()}-1`, tableEnName: 'dim_dept', tableChineseName: '部门维表', tableAlias: 'd', dimTableField: 'dept_id', mainTableField: 'dept_id', extraConditions: '', requireFields: 'dept_name,dept_manager' },
+                    { id: `sample-${Date.now()}-2`, tableEnName: 'dim_user', tableChineseName: '用户维表', tableAlias: 'u', dimTableField: 'user_id', mainTableField: 'user_id', extraConditions: 'u.status = 1', requireFields: 'user_name,dept_name,user_level' },
+                    { id: `sample-${Date.now()}-3`, tableEnName: 'dim_product', tableChineseName: '商品维表', tableAlias: 'p', dimTableField: 'product_id', mainTableField: 'product_id', extraConditions: '', requireFields: 'product_name,category_name,brand_name' },
+                    { id: `sample-${Date.now()}-4`, tableEnName: 'dim_store', tableChineseName: '门店维表', tableAlias: 's', dimTableField: 'store_id', mainTableField: 'store_id', extraConditions: 's.is_active = 1', requireFields: 'store_name,region,city' },
+                    { id: `sample-${Date.now()}-5`, tableEnName: 'dim_date', tableChineseName: '日期维表', tableAlias: 'dt', dimTableField: 'date_key', mainTableField: 'order_date', extraConditions: '', requireFields: 'year,month,day,weekday' },
+                  ];
+                  setRows(sampleRows);
+                  skipAutoSaveRef.current = true;
+                  success('已加载示例配置，请保存');
+                }}
+                className="px-2.5 py-1.5 text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+              >
+                维表配置
+              </button>
+              <button
+                onClick={() => {
+                  const sampleRows: ConfigRow[] = [
+                    { id: `sample-${Date.now()}-1`, tableEnName: 'dim_org', tableChineseName: '组织架构维表', tableAlias: 'o', dimTableField: 'org_code', mainTableField: 'org_code', extraConditions: '', requireFields: 'org_name,parent_org,org_level' },
+                    { id: `sample-${Date.now()}-2`, tableEnName: 'dim_supplier', tableChineseName: '供应商维表', tableAlias: 'sp', dimTableField: 'supplier_id', mainTableField: 'supplier_code', extraConditions: 'sp.is_valid = 1', requireFields: 'supplier_name,contact_person,phone,region' },
+                    { id: `sample-${Date.now()}-3`, tableEnName: 'dim_customer', tableChineseName: '客户维表', tableAlias: 'c', dimTableField: 'cust_id', mainTableField: 'cust_id', extraConditions: '', requireFields: 'cust_name,cust_level,cust_region,credit_level' },
+                    { id: `sample-${Date.now()}-4`, tableEnName: 'dim_channel', tableChineseName: '渠道维表', tableAlias: 'ch', dimTableField: 'channel_id', mainTableField: 'channel_id', extraConditions: '', requireFields: 'channel_name,channel_type,channel_owner' },
+                    { id: `sample-${Date.now()}-5`, tableEnName: 'dim_currency', tableChineseName: '币种维表', tableAlias: 'cu', dimTableField: 'currency_code', mainTableField: 'currency_code', extraConditions: '', requireFields: 'currency_name,symbol,exchange_rate' },
+                  ];
+                  setRows(sampleRows);
+                  skipAutoSaveRef.current = true;
+                  success('已加载示例配置，请保存');
+                }}
+                className="px-2.5 py-1.5 text-xs bg-purple-50 text-purple-600 border border-purple-200 rounded-md hover:bg-purple-100 transition-colors"
+              >
+                业务维表
+              </button>
+            </div>
             <Button onClick={handleAddRow} className="gap-2">
               <Plus className="w-4 h-4" />
               新增配置

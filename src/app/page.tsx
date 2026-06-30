@@ -235,6 +235,52 @@ FROM cte1 JOIN cte2 ON cte1.user_id = cte2.user_id`,
   },
 ];
 
+// ========== 示例规则集 ==========
+
+interface SampleRuleSet {
+  label: string;
+  desc: string;
+  rules: GlobalRule[];
+}
+
+const SAMPLE_RULESETS: SampleRuleSet[] = [
+  {
+    label: '💰 金额+日期规则',
+    desc: '金额→DECIMAL, 日期→DATE, 时间→TIMESTAMP',
+    rules: [
+      { id: 'sr-amt', keywords: ['amt', 'amount', 'price', '金额', '价格', '费用'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'DECIMAL', mysql: 'DECIMAL', starrocks: 'DECIMAL' }, typeParams: { spark: { precision: 24, scale: 6 }, mysql: { precision: 18, scale: 2 }, starrocks: { precision: 18, scale: 2 } }, priority: 1 },
+      { id: 'sr-date', keywords: ['date', 'dt', '日期'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'DATE', mysql: 'DATE', starrocks: 'DATE' }, typeParams: {}, priority: 2 },
+      { id: 'sr-time', keywords: ['time', 'timestamp', '时间'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'TIMESTAMP', mysql: 'DATETIME', starrocks: 'DATETIME' }, typeParams: {}, priority: 3 },
+      { id: 'sr-qty', keywords: ['qty', 'quantity', 'count', '数量', '总数'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'BIGINT', mysql: 'BIGINT', starrocks: 'BIGINT' }, typeParams: {}, priority: 4 },
+      { id: 'sr-id', keywords: ['id', 'icode', '编码'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'STRING', mysql: 'VARCHAR', starrocks: 'VARCHAR' }, typeParams: { mysql: { length: 64 }, starrocks: { length: 64 } }, priority: 5 },
+      { id: 'sr-name', keywords: ['name', '名称', '描述', '备注'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'STRING', mysql: 'VARCHAR', starrocks: 'VARCHAR' }, typeParams: { mysql: { length: 256 }, starrocks: { length: 256 } }, priority: 6 },
+      { id: 'sr-rate', keywords: ['rate', 'ratio', 'percent', '率', '占比'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'DECIMAL', mysql: 'DECIMAL', starrocks: 'DECIMAL' }, typeParams: { spark: { precision: 5, scale: 4 }, mysql: { precision: 5, scale: 4 }, starrocks: { precision: 5, scale: 4 } }, priority: 7 },
+    ],
+  },
+  {
+    label: '🔤 文本匹配规则',
+    desc: '精准匹配字段名和注释中的文本类型',
+    rules: [
+      { id: 'tx-eq', keywords: ['status_code', 'order_status', 'user_status'], matchType: 'equals', targetField: 'name', targetDatabases: ['spark', 'mysql'], dataTypes: { spark: 'STRING', mysql: 'VARCHAR' }, typeParams: { mysql: { length: 32 } }, priority: 1 },
+      { id: 'tx-prefix', keywords: ['is_', 'has_', 'need_'], matchType: 'prefix', targetField: 'name', targetDatabases: ['spark', 'mysql'], dataTypes: { spark: 'BOOLEAN', mysql: 'TINYINT' }, typeParams: {}, priority: 2 },
+      { id: 'tx-suffix', keywords: ['_desc', '_text', '_content'], matchType: 'suffix', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'STRING', mysql: 'TEXT', starrocks: 'STRING' }, typeParams: {}, priority: 3 },
+      { id: 'tx-phone', keywords: ['phone', 'mobile', 'tel'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'STRING', mysql: 'VARCHAR', starrocks: 'VARCHAR' }, typeParams: { mysql: { length: 20 }, starrocks: { length: 20 } }, priority: 4 },
+      { id: 'tx-email', keywords: ['email', 'mail'], matchType: 'contains', targetField: 'name', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'STRING', mysql: 'VARCHAR', starrocks: 'VARCHAR' }, typeParams: { mysql: { length: 128 }, starrocks: { length: 128 } }, priority: 5 },
+    ],
+  },
+  {
+    label: '📊 中文注释推断',
+    desc: '通过字段中文注释推断类型',
+    rules: [
+      { id: 'cn-amt', keywords: ['金额', '价格', '费用', '收入', '支出', '成本'], matchType: 'contains', targetField: 'comment', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'DECIMAL', mysql: 'DECIMAL', starrocks: 'DECIMAL' }, typeParams: { spark: { precision: 24, scale: 6 }, mysql: { precision: 18, scale: 2 }, starrocks: { precision: 18, scale: 2 } }, priority: 1 },
+      { id: 'cn-date', keywords: ['日期', '年月日'], matchType: 'contains', targetField: 'comment', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'DATE', mysql: 'DATE', starrocks: 'DATE' }, typeParams: {}, priority: 2 },
+      { id: 'cn-time', keywords: ['时间', '时刻', '时分秒'], matchType: 'contains', targetField: 'comment', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'TIMESTAMP', mysql: 'DATETIME', starrocks: 'DATETIME' }, typeParams: {}, priority: 3 },
+      { id: 'cn-qty', keywords: ['数量', '个数', '次数'], matchType: 'contains', targetField: 'comment', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'BIGINT', mysql: 'BIGINT', starrocks: 'BIGINT' }, typeParams: {}, priority: 4 },
+      { id: 'cn-rate', keywords: ['占比', '比例', '率'], matchType: 'contains', targetField: 'comment', targetDatabases: ['spark', 'mysql', 'starrocks'], dataTypes: { spark: 'DECIMAL', mysql: 'DECIMAL', starrocks: 'DECIMAL' }, typeParams: { spark: { precision: 5, scale: 4 }, mysql: { precision: 5, scale: 4 }, starrocks: { precision: 5, scale: 4 } }, priority: 5 },
+    ],
+  },
+];
+
 // 关键词输入组件 - 使用本地状态避免重新渲染导致光标跳动
 function KeywordInput({
   value,
@@ -1003,6 +1049,40 @@ export default function Home() {
               >
                 🗑️ 清除缓存
               </button>
+            </div>
+
+            {/* 示例规则集 */}
+            <div className="bg-white border border-dashed border-blue-200 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-700">📋 示例规则集（点击应用）</h3>
+                <button
+                  onClick={() => {
+                    setDirtyRules(new Set());
+                  }}
+                  className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded hover:bg-gray-200 transition-colors"
+                >
+                  清除脏标记
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {SAMPLE_RULESETS.map((rs, idx) => (
+                  <button
+                    key={idx}
+                    onClick={async () => {
+                      setGlobalRulesWithRef(JSON.parse(JSON.stringify(rs.rules)));
+                      setDirtyRules(new Set(rs.rules.map(r => r.id)));
+                      success(`已加载「${rs.label}」，请点击保存`);
+                    }}
+                    className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-300 transition-colors"
+                    title={rs.desc}
+                  >
+                    {rs.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                💡 点击示例规则集自动填入规则，需要手动点击"保存规则"才会持久化
+              </p>
             </div>
 
             <div className="bg-blue-50 p-4 rounded-lg mb-6 text-sm text-blue-700">

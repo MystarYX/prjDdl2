@@ -27,6 +27,67 @@ const DEFAULT_TYPES = {
   starrocks: 'VARCHAR(256)'
 };
 
+// ========== 示例案例 ==========
+interface AlterSampleCase {
+  label: string;
+  tableName: string;
+  fieldText: string;
+  dbTypes: string[];
+}
+
+const ALTER_SAMPLE_CASES: AlterSampleCase[] = [
+  {
+    label: '🆕 用户新增字段',
+    tableName: 'dwd_user_info_df',
+    dbTypes: ['spark', 'mysql'],
+    fieldText: [
+      'user_id          -- 用户ID',
+      'user_name        -- 用户名称',
+      'phone            -- 手机号',
+      'email            -- 邮箱地址',
+      'gender           -- 性别',
+      'birthday         -- 出生日期',
+      'register_time    -- 注册时间',
+      'user_level       -- 用户等级',
+      'credit_score     -- 信用分',
+    ].join('\n'),
+  },
+  {
+    label: '🛒 订单扩展字段',
+    tableName: 'dwd_order_detail_df',
+    dbTypes: ['spark'],
+    fieldText: [
+      'order_amt        -- 订单金额',
+      'discount_amt     -- 优惠金额',
+      'payment_amt      -- 实付金额',
+      'coupon_id        -- 优惠券ID',
+      'delivery_date    -- 发货日期',
+      'sign_time        -- 签收时间',
+      'order_status     -- 订单状态',
+      'refund_amt       -- 退款金额',
+      'refund_reason    -- 退款原因',
+    ].join('\n'),
+  },
+  {
+    label: '📦 商品属性字段',
+    tableName: 'dwd_product_df',
+    dbTypes: ['spark', 'starrocks'],
+    fieldText: [
+      'product_name     -- 商品名称',
+      'category_id      -- 分类ID',
+      'brand_name       -- 品牌名称',
+      'product_price    -- 商品价格',
+      'cost_price       -- 成本价格',
+      'stock_qty        -- 库存数量',
+      'sale_qty         -- 销量',
+      'product_desc     -- 商品描述',
+      'shelf_status     -- 上架状态',
+      'create_date      -- 创建日期',
+      'update_time      -- 更新时间',
+    ].join('\n'),
+  },
+];
+
 // 解析字段文本
 const parseFields = (text: string): Array<{ name: string; comment: string }> => {
   const fields: Array<{ name: string; comment: string }> = [];
@@ -363,6 +424,42 @@ export default function AlterTab({ globalRules }: AlterTabProps) {
               </div>
             </div>
           ))}
+
+          {/* 示例案例 */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-dashed border-blue-200">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-gray-700">📋 示例案例（点击自动填充）</h3>
+              <button
+                onClick={() => {
+                  setFieldText('');
+                  setTableNames({ spark: '', mysql: '', starrocks: '' });
+                }}
+                className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded hover:bg-gray-200 transition-colors"
+              >
+                清空
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {ALTER_SAMPLE_CASES.map((sample, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setFieldText(sample.fieldText);
+                    setSelectedDbTypes(sample.dbTypes);
+                    // 为各数据库设置表名
+                    const newTableNames: Record<string, string> = {};
+                    sample.dbTypes.forEach(db => {
+                      newTableNames[db] = sample.tableName;
+                    });
+                    setTableNames(prev => ({ ...prev, ...newTableNames }));
+                  }}
+                  className="px-2.5 py-1 text-xs bg-blue-50 text-blue-600 border border-blue-200 rounded-md hover:bg-blue-100 hover:border-blue-300 transition-colors whitespace-nowrap"
+                >
+                  {sample.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* 字段输入 */}
           <div className="bg-white rounded-xl p-6 shadow-sm">
